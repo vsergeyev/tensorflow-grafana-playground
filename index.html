@@ -1,0 +1,173 @@
+<!doctype html>
+
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+
+  <title>TensorFlow JS playground - ML prediction for monitoring data</title>
+  <meta name="description" content="">
+  <meta name="author" content="">
+
+  <style type="text/css">
+      body, html {
+        background-color: #000;
+        color: #c7d0d9;
+        padding: 0px 20px 0 20px;
+        margin: 0;
+        height: 100%;
+        font-family: Roboto,Helvetica Neue,Arial,sans-serif;
+        font-size: 14px;
+      }
+
+      div.tile {
+        display: inline-block;
+        background-color: #141619;
+        border: 1px solid #202226;
+        border-radius: 3px;
+        padding: 0 10px;
+        font-size: 12px;
+      }
+
+      div.header {
+        line-height: 28px;
+        text-align: center;
+        font-weight: bold;
+      }
+
+      div.graph {
+        /*border-left: 1px solid #eee;
+        border-bottom: 1px solid #eee;*/
+        width: 800px;
+        height: 300px;
+        text-align: center;
+        vertical-align: middle;
+        /*margin: 20px;*/
+      }
+
+      input {
+        background-color: #141619;
+        color: #7b8087;
+        border: 1px solid #2f2f32;
+        line-height: 18px;
+      }
+
+      input:hover {
+        color: #fff;
+        border: 1px solid #eee;
+      }
+  </style>
+
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest"> </script>
+  <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@1.0.0/dist/tf.min.js"></script>
+  <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/twitter-bootstrap/4.5.0/js/bootstrap.min.js"></script>
+
+  <script src="./monitoring_data.js"></script>
+
+  <script>
+    var model;
+    const input_shape = 192;
+    const learning_rate = 0.001;
+    const batch_size = 1;
+    const epochs = 10;
+
+    async function fit() {
+      const metric = cpu_utilization1;
+      const len = metric.values.length;
+
+      const ts = metric.timestamps.map((val)=>{
+        return (new Date(val).getTime()/1000);
+      });
+      console.log(ts);
+
+      const x = tf.tensor3d(ts, [1, len, 1]);
+      const y = tf.tensor3d(metric.values, [1, len, 1]);
+
+      const history = await model.fit(x, y, {
+        batchSize: batch_size,
+        epochs: epochs,
+        callbacks: {
+          onEpochEnd: async (epoch, logs) => {
+            console.log(epoch, logs);
+          }
+        }
+      });
+      console.log(history.history.loss[0]);
+    }
+
+    function train_model() {
+      fit().then(function() {
+        console.log('Training is Complete');
+      });
+
+      // train_data().then(function(){
+      //     console.log('Training is Complete');
+      //     console.log('Predictions :');
+      //     model.predict(x_test).print();
+      //   }
+      // );
+    }
+
+    function plot_data() {
+      let test_data = {
+        x: cpu_utilization1.timestamps,
+        y: cpu_utilization1.values,
+        mode: 'lines'
+      };
+
+      let data = [test_data];
+      var layout = {
+        title:'CPU utilization (1 anomaly)',
+        xaxis: {
+          title: 'Time'
+        },
+        yaxis: {
+          title: 'Utilization %'
+        }
+      };
+
+      Plotly.newPlot('graph', data, layout);
+    }
+
+    document.addEventListener("DOMContentLoaded", function(event) {
+      model = tf.sequential();
+
+      const inputs = tf.layers.inputLayer({inputShape: [input_shape, 1]});
+      const lstm_out = tf.layers.lstm({units: 32, returnSequences: true});
+      const outputs = tf.layers.dense({units: 1, activation: 'relu'});
+
+      model.add(inputs);
+      model.add(lstm_out);
+      model.add(outputs);
+
+      model.compile({
+        optimizer: tf.train.adam(learningRate=learning_rate),
+        loss: "meanSquaredError"
+      });
+      model.summary();
+
+      console.log('Model Successfully Compiled');
+
+      plot_data();
+    });
+  </script>
+
+</head>
+
+<body>
+    <h1>Tensorflow JS playground with time series</h1>
+    <p>
+      See on GitHub: <a href="https://github.com/vsergeyev/tensorflow-grafana-playground">https://github.com/vsergeyev/tensorflow-grafana-playground</a>
+    </p>
+    <div class="tile">
+      <div class="header">Machine Learning tile</div>
+
+      <!-- <input type="button" value="Plot metric data" onclick="plot_data()" /> -->
+      <input type="button" value="Train ML model" onclick="train_model()" />
+      <input type="button" value="Run prediction" />
+
+      <div class="graph" id="graph"></div>
+    </div>
+</body>
+</html>
