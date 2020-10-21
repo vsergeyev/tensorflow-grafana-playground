@@ -48,7 +48,8 @@
         background-color: #141619;
         color: #7b8087;
         border: 1px solid #2f2f32;
-        line-height: 18px;
+        line-height: 21px;
+        margin-bottom: 5px;
       }
 
       input:hover {
@@ -68,21 +69,24 @@
   <script>
     var model;
     const input_shape = 192;
-    const learning_rate = 0.001;
+    const learning_rate = 0.00001;
     const batch_size = 1;
     const epochs = 10;
+    const metric = cpu_utilization1;
 
     async function fit() {
-      const metric = cpu_utilization1;
       const len = metric.values.length;
 
       const ts = metric.timestamps.map((val)=>{
         return (new Date(val).getTime()/1000);
       });
-      console.log(ts);
 
       const x = tf.tensor3d(ts, [1, len, 1]);
-      const y = tf.tensor3d(metric.values, [1, len, 1]);
+      // const y = tf.tensor3d(metric.values, [1, len, 1]);
+      // Normalize data, assuming Metric can be 0-100% (CPU utilization)
+      const y = tf.tensor1d(metric.values).div(100).reshape([1, len, 1]);
+      // const x = tf.tensor1d(ts);
+      // const y = tf.tensor1d(metric.values).div(100);
 
       const history = await model.fit(x, y, {
         batchSize: batch_size,
@@ -93,30 +97,77 @@
           }
         }
       });
-      console.log(history.history.loss[0]);
+      console.log(history);
     }
 
     function train_model() {
       fit().then(function() {
         console.log('Training is Complete');
+        predict_metric();
       });
-
-      // train_data().then(function(){
-      //     console.log('Training is Complete');
-      //     console.log('Predictions :');
-      //     model.predict(x_test).print();
-      //   }
-      // );
     }
 
-    function plot_data() {
+    function predict_metric() {
+      // const ts = metric.timestamps_predict.map((val)=>{
+      //   return (new Date(val).getTime()/1000);
+      // });
+      const ts = metric.timestamps.map((val)=>{
+        return (new Date(val).getTime()/1000);
+      });
+      const x_test = tf.tensor3d(ts, [1, ts.length, 1]);
+
+      // model.predict(x_test).print();
+      // const res = Array.from(model.predict(x_test).mul(100).dataSync());
+      prediction = model.predict(x_test).dataSync();
+      // console.log(prediction);
+      const res = Array.from(prediction);
+      console.log(res);
+
+      // plot_data(predicted={
+      //   x: metric.timestamps, // metric.timestamps_predict,
+      //   y: res,
+      //   mode: 'lines'
+      // })
+
       let test_data = {
-        x: cpu_utilization1.timestamps,
-        y: cpu_utilization1.values,
+        x: metric.timestamps,
+        y: metric.values.map((val)=>{ return val/100 }),
+        mode: 'lines'
+      };
+      let predicted={
+        x: metric.timestamps,
+        y: res,
+        mode: 'lines'
+      }
+
+      let data = [test_data, predicted];
+
+      var layout = {
+        title:'CPU utilization - metric & prediction',
+        xaxis: {
+          title: 'Time'
+        },
+        yaxis: {
+          title: 'Utilization %'
+        }
+      };
+
+      Plotly.newPlot('graph_prediction', data, layout);
+    }
+
+    function plot_data(predicted=null) {
+      let test_data = {
+        x: metric.timestamps,
+        y: metric.values,
         mode: 'lines'
       };
 
       let data = [test_data];
+
+      if (predicted) {
+        data.push(predicted);
+      }
+
       var layout = {
         title:'CPU utilization (1 anomaly)',
         xaxis: {
@@ -133,16 +184,20 @@
     document.addEventListener("DOMContentLoaded", function(event) {
       model = tf.sequential();
 
-      const inputs = tf.layers.inputLayer({inputShape: [input_shape, 1]});
-      const lstm_out = tf.layers.lstm({units: 32, returnSequences: true});
-      const outputs = tf.layers.dense({units: 1, activation: 'relu'});
+      model.add(tf.layers.inputLayer({inputShape: [input_shape, 1]}));
+      model.add(tf.layers.lstm({units: 32, returnSequences: true}));
+      model.add(tf.layers.dense({units: 1, activation: 'relu'}));
 
-      model.add(inputs);
-      model.add(lstm_out);
-      model.add(outputs);
+      // model.add(tf.layers.dense({
+      //   inputShape: [input_shape, 1],
+      //   units: 100
+      // }));
+
+      // const optimizer = tf.train.adam(learningRate=learning_rate);
+      const optimizer = tf.train.sgd(learning_rate);
 
       model.compile({
-        optimizer: tf.train.adam(learningRate=learning_rate),
+        optimizer: optimizer,
         loss: "meanSquaredError"
       });
       model.summary();
@@ -165,9 +220,10 @@
 
       <!-- <input type="button" value="Plot metric data" onclick="plot_data()" /> -->
       <input type="button" value="Train ML model" onclick="train_model()" />
-      <input type="button" value="Run prediction" />
+      <input type="button" value="Run prediction" onclick="predict_metric()" />
 
       <div class="graph" id="graph"></div>
+      <div class="graph" id="graph_prediction"></div>
     </div>
 </body>
 </html>
